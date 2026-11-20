@@ -7,6 +7,15 @@ set -Eeuo pipefail
 tarball=${1:?usage: $0 <archm-ABI.tar.gz> <arm64|arm>}
 abi=${2:?usage: $0 <archm-ABI.tar.gz> <arm64|arm>}
 command -v proot >/dev/null 2>&1 || { echo "proot is not installed" >&2; exit 2; }
+# --link2symlink and --kill-on-exit arrived in proot 5.2.0 (Ubuntu's apt package is 5.1.0). Fail
+# once, clearly, instead of letting every check below die with the same "unknown option".
+probe=$(proot --kill-on-exit --link2symlink -0 -r / true 2>&1 || true)
+case $probe in
+  *"unknown option"*)
+    echo "$probe" >&2
+    echo "proot is too old: need >= 5.2.0 (5.4.0 recommended, it adds faccessat2)" >&2
+    exit 2 ;;
+esac
 
 case $abi in
   arm64) native="aarch64";       qemu=qemu-aarch64-static ;;
