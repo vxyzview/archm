@@ -75,7 +75,6 @@ jobs:
 
   release:
     needs: build
-    if: github.event_name != 'push'      # pushes only build and test; publish = schedule or "Run workflow"
     runs-on: ubuntu-24.04
     permissions:
       contents: write           # create the release and its tag

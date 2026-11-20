@@ -13,7 +13,7 @@ Tags are dates: `2026.11.20`, and `2026.11.20.1` for a second build the same day
 
 ## Use it in xyzterm
 
-1. Create the GitHub repo `archm` from these files, then **Actions → release → Run workflow** for the first release.
+1. Create the GitHub repo `archm` from these files; the first push to `main` publishes the first release (**Actions → release → Run workflow** works too).
 2. In xyzterm, replace the Ubuntu rootfs source with archm, per ABI: the release URL and its pinned SHA-256
    (`archm-arm64.tar.gz.sha256`, or `manifest.json` if you want the app to look it up).
 3. What the extractor can rely on: plain `.tar.gz`; entries start at `./` (`./bin`, `./etc`, ...); no hardlinks,
@@ -63,7 +63,7 @@ Get docs and translations back: delete the two `NoExtract` lines in `/etc/pacman
 
 - **Weekly**: Mondays 03:17 UTC the workflow downloads the newest official tarball, verifies it, upgrades everything, and publishes.
 - **Manual**: Actions → release → *Run workflow*.
-- **On push**: only builds and tests (artifacts kept 7 days); it does not publish.
+- **On push**: builds, tests, and publishes a release, like a manual run.
 - The signature of the base tarball is checked against key `68B3537F39A313B3E574D06777193F152BDBE6A6` (published by Arch Linux ARM).
 - Optional repo variable `KEEP_RELEASES` (for example `12`) deletes older releases and tags.
   Remember xyzterm pins a specific release: do not prune the one it points to.
