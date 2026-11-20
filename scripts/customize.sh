@@ -41,6 +41,9 @@ patch_pacman_conf() {
 init_keyring() {
   pacman-key --init
   pacman-key --populate archlinuxarm
+  # Locally sign the package-signing key so packages verify after --populate under proot.
+  # --populate marks master keys trusted but subkey trust can still be "unknown" on arm.
+  pacman-key --lsign-key builder@archlinuxarm.org 2>/dev/null || true
 }
 
 upgrade_system() {
@@ -93,6 +96,8 @@ mask_hooks() {
 
 configure_system() {
   local loc=${LOCALE:-en_US.UTF-8} g
+  # pacman requires these dirs; the arm64 base tarball ships them as absent in some versions.
+  install -d "$ROOT/var/lib/pacman/local" "$ROOT/var/lib/pacman/sync"
   echo archm >"$ROOT/etc/hostname"
   printf '127.0.0.1 localhost\n::1 localhost\n' >"$ROOT/etc/hosts"
   rm -f "$ROOT/etc/resolv.conf"

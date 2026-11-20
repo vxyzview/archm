@@ -160,7 +160,7 @@ rm_line=$(grep -n '^pacman -Rddn' "$log" | head -1 | cut -d: -f1)
 up_line=$(grep -n '^pacman -Su --noconfirm' "$log" | head -1 | cut -d: -f1)
 chk "kernel removed BEFORE upgrade" test "$rm_line" -lt "$up_line"
 chk "keyring refreshed first"   grep -q '^pacman -Sy --noconfirm archlinuxarm-keyring$' "$log"
-chk "extras (minus missing ones)" grep -qx 'pacman -S --needed --noconfirm nano sudo curl wget git openssh htop' "$log"
+chk "extras (minus missing ones)" grep -qx 'pacman -S --needed --noconfirm nano sudo curl wget git openssh htop bash-completion' "$log"
 chk "chroot mounts set up"      grep -q '^mount -t proc' "$log"
 chk "chroot mounts torn down"   grep -q '^umount -R -l' "$log"
 # ---- negative scenarios: a bad base tarball must abort the build and publish nothing
