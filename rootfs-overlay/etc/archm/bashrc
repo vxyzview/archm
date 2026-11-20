@@ -1,0 +1,16 @@
+# archm interactive-shell defaults (bash). Sourced from /etc/bash.bashrc; fork-free on purpose.
+[ -n "${__ARCHM_RC-}" ] && return 0
+__ARCHM_RC=1
+
+# The prompt says "archm" instead of \h: Android reports the hostname as "localhost".
+PS1='\[\e[1;32m\]\u\[\e[0m\]@\[\e[1;36m\]archm\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+
+HISTSIZE=5000
+HISTFILESIZE=10000
+HISTCONTROL=ignoreboth:erasedups
+shopt -s histappend checkwinsize
+
+alias ls='ls --color=auto'
+alias ll='ls -lAh'
+alias grep='grep --color=auto'
+alias update='pacman -Syu'

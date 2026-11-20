@@ -1,0 +1,94 @@
+name: release
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"        # every Monday 03:17 UTC: rebuild on the latest Arch Linux ARM
+  workflow_dispatch:             # "Run workflow" button: build and release right now
+  push:
+    branches: [main]
+    paths:
+      - build.sh
+      - config.env
+      - scripts/**
+      - rootfs-overlay/**
+      - tests/**
+      - .github/workflows/release.yml
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline tests
+        run: bash tests/run.sh
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64, arm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-user-static binfmt-support libarchive-tools pigz proot
+
+      - name: Build rootfs
+        run: sudo bash build.sh "${{ matrix.abi }}" dist
+
+      # Runs as the normal runner user, like an Android app. Non-blocking at first:
+      # make it blocking (remove continue-on-error) once it has been green for a while.
+      - name: Smoke test under proot
+        continue-on-error: true
+        run: bash scripts/smoke-proot.sh "dist/archm-${{ matrix.abi }}.tar.gz" "${{ matrix.abi }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archm-${{ matrix.abi }}
+          path: dist/archm-${{ matrix.abi }}.*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    if: github.event_name != 'push'      # pushes only build and test; publish = schedule or "Run workflow"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write           # create the release and its tag
+      actions: write            # re-enable this workflow (see last step)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: archm-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          KEEP_RELEASES: ${{ vars.KEEP_RELEASES }}     # optional repo variable, e.g. 12
+        run: bash scripts/publish.sh dist
+
+      # GitHub pauses schedules after 60 days without repo activity; this best-effort call
+      # re-enables the workflow so the weekly rebuild keeps running.
+      - name: Keep the weekly schedule alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable release.yml --repo "${{ github.repository }}"
