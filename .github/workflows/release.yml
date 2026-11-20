@@ -65,6 +65,11 @@ jobs:
           git -c advice.detachedHead=false clone --quiet --depth 1 --branch v5.4.0 \
             https://github.com/proot-me/proot.git "$RUNNER_TEMP/proot"
           test "$(git -C "$RUNNER_TEMP/proot" rev-parse HEAD)" = bd5a5f63d72f8210d8cee76195eb9f0749e5bd70
+          d="$RUNNER_TEMP/proot/src/syscall"
+          sed -i 's/^\(\t\[ 48 \] = PR_faccessat,\)$/\1\n\t[ 439 ] = PR_faccessat2,/' "$d/sysnums-arm64.h"
+          sed -i 's/^\(\t\[ 334 \] = PR_faccessat,\)$/\1\n\t[ 439 ] = PR_faccessat2,/' "$d/sysnums-arm.h"
+          grep -q PR_faccessat2 "$d/sysnums-arm64.h"
+          grep -q PR_faccessat2 "$d/sysnums-arm.h"
           make -C "$RUNNER_TEMP/proot/src" -j"$(nproc)" proot
           sudo install -m 0755 "$RUNNER_TEMP/proot/src/proot" /usr/local/bin/proot
 
