@@ -13,9 +13,10 @@ on:
       - rootfs-overlay/**
       - tests/**
       - .github/workflows/release.yml
+  pull_request:                    # tests only; build and release are skipped below
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -26,17 +27,24 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-yaml
       - name: Offline tests
         run: bash tests/run.sh
 
   build:
     needs: test
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        abi: [arm64, arm]
+        include:
+          - abi: arm64
+            runner: ubuntu-24.04-arm   # native arm64, public repos only
+          - abi: arm
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +52,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-user-static binfmt-support libarchive-tools pigz libtalloc-dev pkg-config
+            libarchive-tools pigz libtalloc-dev pkg-config
+          if [ "${{ matrix.abi }}" = arm ]; then
+            sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support
+          fi
 
       # Ubuntu's apt proot is 5.1.0 (2016): it has neither --link2symlink nor --kill-on-exit
       # (both 5.2.0+), nor faccessat2 (5.4.0+), which a current glibc rootfs relies on.
@@ -75,11 +86,10 @@ jobs:
 
   release:
     needs: build
-    if: github.event_name != 'push'      # pushes only build and test; publish = schedule or "Run workflow"
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
       contents: write           # create the release and its tag
-      actions: write            # re-enable this workflow (see last step)
     steps:
       - uses: actions/checkout@v4
 
@@ -95,11 +105,3 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           KEEP_RELEASES: ${{ vars.KEEP_RELEASES }}     # optional repo variable, e.g. 12
         run: bash scripts/publish.sh dist
-
-      # GitHub pauses schedules after 60 days without repo activity; this best-effort call
-      # re-enables the workflow so the weekly rebuild keeps running.
-      - name: Keep the weekly schedule alive
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow enable release.yml --repo "${{ github.repository }}"

@@ -29,7 +29,7 @@ Shell setup lives in `/etc` (`/etc/profile.d/archm.sh`, `/etc/archm/bashrc`) on 
 |---|---|
 | `DisableSandbox` in `pacman.conf`; no `DownloadUser`, no `CheckSpace` | pacman 7's download sandbox needs Landlock/seccomp, which proot/Android generally can't give. Without this, `pacman -Syu` fails. |
 | Kernel, headers, firmware, U-Boot, initramfs tools removed | The Android kernel is what runs. Far fewer files and bytes to extract and back up. |
-| Docs and non-English translations not installed (`NoExtract`, `SLIM=1`) | Fewer files means faster installs and upgrades (every file costs ptrace round-trips). Man pages stay. |
+| Docs and non-English translations not installed (`NoExtract`, `SLIM=1`) | Fewer files means faster installs and upgrades (every file costs ptrace round-trips). Man pages stay; install `man-db` to read them. |
 | Hardware-database pacman hooks masked (`*hwdb*`, `*udev*`) | They rebuild databases that are useless here and are slow under proot. |
 | `makepkg` uses `-j$(nproc)` | Builds use all cores. |
 | Keyring initialised and populated | No slow `pacman-key --init` on first use. |
@@ -64,11 +64,11 @@ Get docs and translations back: delete the two `NoExtract` lines in `/etc/pacman
 - **Weekly**: Mondays 03:17 UTC the workflow downloads the newest official tarball, verifies it, upgrades everything, and publishes.
 - **Manual**: Actions → release → *Run workflow*.
 - **On push**: only builds and tests (artifacts kept 7 days); it does not publish.
+- **Pull requests**: offline tests only.
 - The signature of the base tarball is checked against key `68B3537F39A313B3E574D06777193F152BDBE6A6` (published by Arch Linux ARM).
 - Optional repo variable `KEEP_RELEASES` (for example `12`) deletes older releases and tags.
   Remember xyzterm pins a specific release: do not prune the one it points to.
-- GitHub pauses schedules after 60 days without repository activity; the workflow tries to re-enable itself on every run (best effort), and
-  *Enable workflow* on the Actions tab fixes it if it ever stops.
+- GitHub pauses schedules after 60 days without repository activity; *Enable workflow* on the Actions tab fixes it if it ever stops.
 
 ## Build it yourself
 
@@ -77,7 +77,7 @@ Needs a real Linux machine with root (not proot/Termux).
 ```sh
 sudo apt install qemu-user-static binfmt-support libarchive-tools pigz curl gnupg
 sudo ./build.sh arm64 dist        # or: arm
-bash tests/run.sh                 # offline tests, no root needed
+bash tests/run.sh                 # offline tests, no root needed (python3-yaml validates the workflow; skipped if absent)
 ```
 
 Output: `dist/archm-<abi>.tar.gz` (+ `.sha256`, `.packages.txt`, `.info`). `KEEP_WORK=1` keeps the temp rootfs for inspection.

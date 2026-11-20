@@ -59,6 +59,7 @@ check "locale was generated"                'locale -a | grep -qi "^en_US.utf-\?
 check "no default alarm user"               '! getent passwd alarm'
 check "login shell applies archm prompt"    'bash -lic "case \$PS1 in *archm*) ;; *) exit 1;; esac"'
 check "pacman can sync (network, DNS, sandbox off)" 'pacman -Sy --noconfirm'
+check "pacman can install a package"        'pacman -S --needed --noconfirm tree'
 
 printf '\n%s' "$report"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then

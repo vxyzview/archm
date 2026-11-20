@@ -61,8 +61,13 @@ verify_sig() {   # $1 = file, $1.sig = detached signature; only the pinned key i
   chmod 700 "$GNUPGHOME"
   recv_key
   status=$(gpg --batch --status-fd 1 --verify "$1.sig" "$1" 2>/dev/null || true)
-  # VALIDSIG <signing-fpr> ... <primary-key-fpr>
-  if awk -v k="$ALARM_KEY" '$2 == "VALIDSIG" && ($3 == k || $NF == k) { ok = 1 } END { exit !ok }' <<<"$status"; then
+  # VALIDSIG <signing-fpr> ... <primary-key-fpr>. A revoked or expired key still emits
+  # VALIDSIG (and gpg exits 0), so reject those status lines explicitly.
+  if awk -v k="$ALARM_KEY" '
+      $2 == "REVKEYSIG" || $2 == "EXPKEYSIG" || $2 == "KEYREVOKED" { bad = 1 }
+      $2 == "VALIDSIG" && ($3 == k || $NF == k) { ok = 1 }
+      END { exit !(ok && !bad) }
+    ' <<<"$status"; then
     log "Signature OK: $(basename "$1") signed by $ALARM_KEY"
   else
     log "Signature check FAILED for $(basename "$1")"
@@ -176,11 +181,17 @@ pack() {
   local out=$OUT/archm-$ABI.tar.gz gz="gzip -9n"
   if command -v pigz >/dev/null 2>&1; then gz="pigz -9nT"; fi
   log "Packing $(basename "$out")"
+  # Write a .part file so a failed tar/gzip cannot leave a publishable truncated tarball.
+  # .l2s.* are proot --link2symlink shadow files, never part of a real rootfs.
   # shellcheck disable=SC2086
-  tar -C "$ROOT" --numeric-owner --hard-dereference --sort=name \
+  if ! tar -C "$ROOT" --numeric-owner --hard-dereference --sort=name \
     --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
-    --exclude='./run/*' --exclude='./tmp/*' \
-    -cf - . | $gz >"$out"
+    --exclude='./run/*' --exclude='./tmp/*' --exclude='*/.l2s.*' \
+    -cf - . | $gz >"$out.part"; then
+    rm -f "$out.part"
+    return 1
+  fi
+  mv "$out.part" "$out"
   (cd "$OUT" && sha256sum "archm-$ABI.tar.gz" >"archm-$ABI.tar.gz.sha256")
 }
 

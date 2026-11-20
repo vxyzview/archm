@@ -10,8 +10,7 @@ ROOTFS=${ARCHM_ROOTFS:-$HOME/archm}
 STATE=${ARCHM_STATE:-$ROOTFS.state}        # fake /proc files live outside the rootfs
 mkdir -p "$STATE" "$ROOTFS/tmp"
 
-unset LD_PRELOAD                           # Termux's libtermux-exec confuses proot
-# NEVER export PROOT_NO_SECCOMP: the seccomp fast path is what keeps proot tolerable.
+unset LD_PRELOAD PROOT_NO_SECCOMP          # Termux's libtermux-exec confuses proot; seccomp must stay on
 : "${PROOT_TMP_DIR:=${TMPDIR:-/tmp}}"
 export PROOT_TMP_DIR
 
@@ -43,10 +42,12 @@ fake /proc/uptime  "1000.00 1000.00"
 fake /proc/version "Linux version 6.1.0 (proot@android) (gcc 14.2.1) #1 SMP PREEMPT"
 fake /proc/sys/kernel/cap_last_cap "40"
 
+envs=(HOME=/root TERM="${TERM:-xterm-256color}" LANG=en_US.UTF-8
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/bin)
+[ -n "${TZ:-}" ] && envs+=(TZ="$TZ")   # unset = keep the rootfs /etc/localtime
+
 # --link2symlink  Android forbids hard links; proot emulates them
 # -0              fake root (uid 0), needed by pacman
 # --kill-on-exit  no orphaned processes when the shell exits
 exec proot --kill-on-exit --link2symlink -0 -r "$ROOTFS" "${binds[@]}" -w /root \
-  /usr/bin/env -i HOME=/root TERM="${TERM:-xterm-256color}" LANG=en_US.UTF-8 \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/bin \
-  /bin/bash --login "$@"
+  /usr/bin/env -i "${envs[@]}" /bin/bash --login "$@"

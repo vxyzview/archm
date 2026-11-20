@@ -5,17 +5,27 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 REPO=$PWD
 T=$(mktemp -d)
-trap 'gpgconf --kill all >/dev/null 2>&1 || true; rm -rf "$T"' EXIT
+export GNUPGHOME=$T/gnupg   # keep gpgconf --kill away from the developer's real agent
+mkdir -m 700 "$GNUPGHOME"
+trap 'gpgconf --homedir "$GNUPGHOME" --kill all >/dev/null 2>&1 || true; rm -rf "$T"' EXIT
 
 passed=0
 failed=0
 assert() { if ! "$@"; then echo "assertion failed: $*" >&2; exit 1; fi; }
 t() {   # t <name> <function>: run in a subshell, report, keep going
-  local name=$1; shift
-  if ( "$@" ) >"$T/out.log" 2>&1; then
-    passed=$((passed + 1)); printf '  ok    %s\n' "$name"
-  else
+  local name=$1 rc
+  shift
+  rm -f "$T/skip"
+  set +e
+  ( set -e; "$@" ) >"$T/out.log" 2>&1   # an if-condition would disable set -e in the test
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
     failed=$((failed + 1)); printf '  FAIL  %s\n' "$name"; sed 's/^/        | /' "$T/out.log"
+  elif [ -e "$T/skip" ]; then
+    printf '  skip  %s\n' "$name"
+  else
+    passed=$((passed + 1)); printf '  ok    %s\n' "$name"
   fi
 }
 
@@ -27,7 +37,12 @@ test_syntax() {
            rootfs-overlay/etc/profile.d/archm.sh rootfs-overlay/etc/archm/bashrc; do
     bash -n "$f" || { echo "syntax error in $f"; exit 1; }
   done
-  python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/release.yml"))'
+  if python3 -c 'import yaml' 2>/dev/null; then
+    python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/release.yml"))'
+  else
+    echo "skip: python3-yaml not installed, workflow YAML not validated"
+    touch "$T/skip"
+  fi
   # every script the workflow calls must exist
   for f in $(grep -o '\(scripts\|tests\)/[a-z-]*\.sh' .github/workflows/release.yml | sort -u) build.sh; do
     [ -f "$f" ] || { echo "workflow references missing $f"; exit 1; }
@@ -83,6 +98,16 @@ test_signature() {
   ALARM_KEY=$one
   echo tampered >>"$WORK/file"
   if verify_sig "$WORK/file"; then echo "tampered file accepted"; exit 1; fi
+
+  # A key that expired after signing still produces VALIDSIG; it must not be accepted.
+  # Faked time keeps the test deterministic: sign in 2020, verify now.
+  eval "$g --faked-system-time 20200101T000000 --quick-generate-key 'archm test exp <exp@example.invalid>' default default 1d" 2>/dev/null
+  local exp
+  exp=$(gpg --batch --with-colons --list-keys exp@example.invalid | awk -F: '$1=="fpr"{print $10; exit}')
+  echo payload >"$WORK/file2"
+  eval "$g --faked-system-time 20200101T010000 --local-user $exp --detach-sign -o '$WORK/file2.sig' '$WORK/file2'" 2>/dev/null
+  ALARM_KEY=$exp
+  if verify_sig "$WORK/file2"; then echo "expired key accepted"; exit 1; fi
 }
 
 fixture_pacman_conf() {
@@ -208,6 +233,16 @@ test_pack() {
   [ "$(cat "$T/pk/x/usr/bin/b")" = data ] || { echo "hardlink content lost"; exit 1; }
 }
 
+test_pack_failure() {
+  source "$REPO/build.sh"
+  ROOT=$T/pkf/rootfs; OUT=$T/pkf/out; ABI=arm64
+  mkdir -p "$ROOT" "$OUT" "$T/pkf/bin"
+  printf '#!/bin/sh\ncat >/dev/null\nexit 1\n' >"$T/pkf/bin/tar"
+  chmod +x "$T/pkf/bin/tar"
+  if PATH=$T/pkf/bin:$PATH pack >/dev/null 2>&1; then echo "pack succeeded with failing tar"; exit 1; fi
+  [ -z "$(ls -A "$OUT")" ] || { echo "partial output left: $(ls -A "$OUT")"; exit 1; }
+}
+
 test_publish() {
   local d=$T/pub abi
   mkdir -p "$d/dist" "$d/bin"
@@ -259,12 +294,13 @@ t "scripts parse, workflow is valid YAML"   test_syntax
 t "ABI mapping arm64/arm"                    test_target
 t "kernel/firmware regex"                    test_remove_regex
 t "md5 verification"                         test_md5
-t "GPG: pinned key only, tamper detected"    test_signature
+t "GPG: pinned key only, tamper/expiry detected" test_signature
 t "pacman.conf patch (idempotent, SLIM)"     test_pacman_conf
 t "overlay install + makepkg flags"          test_overlay
 t "login/interactive shell overlay"          test_shell_overlay
 t "pacman hook masking"                      test_hooks
 t "tarball: no hardlinks, excludes, hash"    test_pack
+t "tarball: failed pack leaves nothing"      test_pack_failure
 t "release: tag, manifest, notes, prune"     test_publish
 t "e2e: real build.sh+customize.sh, fake chroot"  bash tests/e2e-fake.sh "$T/e2e-run"
 

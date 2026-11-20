@@ -103,7 +103,8 @@ case "$1" in
 esac'
 
 # ---- run the real thing; only the pinned key differs from production
-cp -r "$REPO" "$E/repo"
+mkdir -p "$E/repo"
+cp -r "$REPO"/{build.sh,config.env,scripts,rootfs-overlay} "$E/repo/"
 sed -i "s/^ALARM_KEY=.*/ALARM_KEY=$FPR/" "$E/repo/build.sh"
 (cd "$E/repo" && PATH=$E/bin:$PATH ALARM_URL=file://$E/mirror ARCHM_VERSION=2099.01.01 \
    bash build.sh arm64 "$E/out") >"$E/build.log" 2>&1 || { cat "$E/build.log"; echo "build.sh failed"; exit 1; }
