@@ -16,6 +16,10 @@ ALARM_URL=${ALARM_URL:-http://os.archlinuxarm.org/os}
 # Arch Linux ARM Build System key: signs the rootfs tarballs and the packages.
 # Fingerprint as published on https://archlinuxarm.org/about/downloads
 ALARM_KEY=68B3537F39A313B3E574D06777193F152BDBE6A6
+# Public copy of that key, kept in the repo so a flaky keyserver cannot fail the weekly build.
+# Only a convenience: the fingerprint above remains the one thing trusted (verify_sig accepts
+# a signature from exactly that key), so a wrong or tampered file just falls back to keyservers.
+ALARM_KEYFILE=${ALARM_KEYFILE:-$HERE/keys/archlinuxarm.asc}
 VERSION=${ARCHM_VERSION:-$(date -u +%Y.%m.%d)}
 
 log() { printf '\n\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*" >&2; }
@@ -45,6 +49,11 @@ verify_md5() {   # integrity only; authenticity comes from verify_sig
 
 recv_key() {
   gpg --batch --list-keys "$ALARM_KEY" >/dev/null 2>&1 && return 0
+  if [ -s "$ALARM_KEYFILE" ]; then
+    gpg --batch --import "$ALARM_KEYFILE" >/dev/null 2>&1 || true
+    gpg --batch --list-keys "$ALARM_KEY" >/dev/null 2>&1 && return 0
+    log "$ALARM_KEYFILE does not provide $ALARM_KEY: trying keyservers"
+  fi
   local ks
   for ks in hkps://keyserver.ubuntu.com hkps://keys.openpgp.org hkps://pgp.mit.edu; do
     if timeout 90 gpg --batch --keyserver "$ks" --recv-keys "$ALARM_KEY" >/dev/null 2>&1; then
@@ -195,6 +204,60 @@ pack() {
   (cd "$OUT" && sha256sum "archm-$ABI.tar.gz" >"archm-$ABI.tar.gz.sha256")
 }
 
+# ---------------------------------------------------------------- build report
+# Numbers to decide what else to trim. Informational only: main() calls these guarded, a
+# failure here must never stop a build or a release.
+
+top_packages() {   # the 30 largest installed packages as "size  name"; needs the chroot
+  in_chroot pacman -Qi | awk '
+    /^Name/           { name = $3 }
+    /^Installed Size/ {
+      size = $4
+      if ($5 == "KiB") size *= 1024; else if ($5 == "MiB") size *= 1048576; else if ($5 == "GiB") size *= 1073741824
+      printf "%d %s\n", size, name
+    }' | sort -rn | awk 'NR <= 30 { printf "%8.1f MiB  %s\n", $1 / 1048576, $2 }'
+}
+
+hardlink_stats() {   # "<files> <groups> <bytes>": what pack()'s --hard-dereference stores extra
+  find "$ROOT" -xdev -type f -links +1 -printf '%i %s\n' | awk '
+    { n[$1]++; size[$1] = $2 }
+    END { for (i in n) { files += n[i]; groups++; extra += (n[i] - 1) * size[i] }
+          printf "%d %d %d\n", files, groups, extra }'
+}
+
+measure_tarball() {   # sets FILES (entries) and UNPACKED (bytes of file data once extracted)
+  local stats
+  stats=$(tar -tvzf "$OUT/archm-$ABI.tar.gz" |
+    awk '{ n++; if ($3 ~ /^[0-9]+$/) bytes += $3 } END { printf "%d %d\n", n, bytes }') || return 1
+  read -r FILES UNPACKED <<<"$stats"
+  [ "${FILES:-0}" -gt 0 ]
+}
+
+write_report() {   # archm-<abi>.stats.md: appended to the CI job summary and printed in the log
+  local pk hl_files hl_groups hl_bytes
+  pk=$(wc -l <"$OUT/archm-$ABI.packages.txt")
+  read -r hl_files hl_groups hl_bytes <<<"${HARDLINKS:-0 0 0}"
+  {
+    echo "### archm $ABI build report"
+    echo
+    echo "| | |"
+    echo "|---|---|"
+    echo "| version | $VERSION |"
+    echo "| packages | ${pk//[[:space:]]/} |"
+    if [ -n "${FILES:-}" ]; then
+      echo "| files in the tarball | $FILES |"
+      awk -v b="$UNPACKED" 'BEGIN { printf "| unpacked size | %.1f MiB |\n", b / 1048576 }'
+    fi
+    awk -v b="$(stat -c %s "$OUT/archm-$ABI.tar.gz")" 'BEGIN { printf "| tarball size | %.1f MiB |\n", b / 1048576 }'
+    awk -v f="$hl_files" -v g="$hl_groups" -v b="$hl_bytes" \
+      'BEGIN { printf "| hardlinked files | %d in %d groups; --hard-dereference stores %.1f MiB of extra copies |\n", f, g, b / 1048576 }'
+    if [ -n "${TOP_PACKAGES:-}" ]; then
+      printf '\nLargest packages by installed size:\n\n```text\n%s\n```\n' "$TOP_PACKAGES"
+    fi
+  } >"$OUT/archm-$ABI.stats.md"
+  cat "$OUT/archm-$ABI.stats.md" >&2
+}
+
 write_info() {
   local pk
   pk=$(wc -l <"$OUT/archm-$ABI.packages.txt")
@@ -205,6 +268,10 @@ version=$VERSION
 base_md5=$BASE_MD5
 packages=${pk//[[:space:]]/}
 EOF
+  # Lets the launcher check free space and show progress by file count before it extracts.
+  if [ -n "${FILES:-}" ]; then
+    printf 'files=%s\nuncompressed_bytes=%s\n' "$FILES" "$UNPACKED" >>"$OUT/archm-$ABI.info"
+  fi
 }
 
 cleanup() {
@@ -239,11 +306,15 @@ main() {
   setup_chroot
   customize
   in_chroot pacman -Q >"$OUT/archm-$ABI.packages.txt"
+  TOP_PACKAGES=$(top_packages 2>/dev/null || true)     # needs the chroot: before teardown
   teardown_chroot
   assert_unmounted
   finalize_rootfs
+  HARDLINKS=$(hardlink_stats 2>/dev/null || true)
   pack
+  measure_tarball || log "could not measure the tarball: files/uncompressed_bytes left out"
   write_info
+  write_report || log "could not write the build report (ignored)"
   if [ -n "${SUDO_UID:-}" ]; then chown -R "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$OUT"; fi
   log "Done"
   ls -lh "$OUT"/archm-"$ABI".* >&2

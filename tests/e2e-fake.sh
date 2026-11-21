@@ -25,7 +25,7 @@ unset GNUPGHOME
 
 # ---- a miniature Arch Linux ARM rootfs, with the things customize.sh must fix
 r=$E/fakeroot
-mkdir -p "$r"/etc/{pacman.d/gnupg,ssh,profile.d} "$r"/usr/{bin,lib/modules/6.1,share/{doc/foo,info,gtk-doc,locale/{de/LC_MESSAGES,fr,en_GB},libalpm/hooks}} \
+mkdir -p "$r"/etc/{pacman.d/gnupg,ssh,profile.d} "$r"/usr/{bin,lib/{modules/6.1,udev},share/{doc/foo,info,gtk-doc,locale/{de/LC_MESSAGES,fr,en_GB},man/{man1,de/man1,fr/man1},libalpm/hooks}} \
   "$r"/var/{cache/pacman/pkg,lib/pacman/sync,lib/systemd,log,tmp} "$r"/{boot,root,run,tmp,proc,sys,dev}
 ln -s usr/bin "$r/bin"
 cat >"$r/etc/pacman.conf" <<'EOF'
@@ -53,6 +53,8 @@ echo x >"$r/boot/Image"; echo x >"$r/usr/lib/modules/6.1/modules.dep"
 echo x >"$r/usr/share/doc/foo/README"; echo x >"$r/usr/share/info/dir"
 echo x >"$r/usr/share/locale/de/LC_MESSAGES/a.mo"; echo x >"$r/usr/share/locale/fr/b.mo"
 echo x >"$r/usr/share/locale/en_GB/c.mo"; echo x >"$r/usr/share/locale/locale.alias"
+echo x >"$r/usr/share/man/man1/ls.1.gz"; echo x >"$r/usr/share/man/de/man1/ls.1.gz"; echo x >"$r/usr/share/man/fr/man1/ls.1.gz"
+echo x >"$r/usr/lib/udev/hwdb.bin"
 echo x >"$r/etc/pacman.d/gnupg/S.gpg-agent"; echo x >"$r/etc/ssh/ssh_host_ed25519_key"
 echo x >"$r/root/.bash_history"; echo x >"$r/tmp/leftover"; echo x >"$r/var/log/pacman.log"
 echo x >"$r/var/cache/pacman/pkg/big.pkg.tar.zst"; echo x >"$r/var/lib/pacman/sync/core.db"
@@ -66,7 +68,14 @@ gpgconf --homedir "$E/gnupg-test" --kill all >/dev/null 2>&1 || true
 
 # ---- stubs
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" >"$E/bin/$1"; chmod +x "$E/bin/$1"; }
-stub gpg   'for a in "$@"; do [ "$a" = --recv-keys ] && exec "$REAL_GPG" --batch --import "$PUBKEY" 2>/dev/null; done; exec "$REAL_GPG" "$@"'
+stub gpg '
+for a in "$@"; do
+  if [ "$a" = --recv-keys ]; then
+    if [ -n "${E2E_NO_KEYSERVER:-}" ]; then echo "keyserver lookup" >>"$E2E_LOG"; exit 2; fi
+    exec "$REAL_GPG" --batch --import "$PUBKEY" 2>/dev/null
+  fi
+done
+exec "$REAL_GPG" "$@"'
 stub uname '[ "${1:-}" = -m ] && echo aarch64 || exec /usr/bin/uname "$@"'
 stub id    '[ "${1:-}" = -u ] && echo 0 || exec /usr/bin/id "$@"'
 stub mount      'echo "mount $*" >>"$E2E_LOG"'
@@ -87,6 +96,8 @@ case "$1" in
   -Q)  printf "bash 5.2-1\nglibc 2.40-1\nopenssh 9.9-1\n" ;;
   -Si) [ "$2" != fastfetch ] ;;                       # pretend fastfetch is missing from the repos
   -Rddn) touch "$E2E_STATE/removed" ;;
+  -Su) if [ -L "$ROOT/etc/pacman.d/hooks/30-systemd-hwdb.hook" ]; then echo "hooks masked at upgrade" >>"$E2E_LOG"; fi
+       : >"$ROOT/usr/share/libalpm/hooks/40-udev-new.hook" ;;   # a hook only the upgrade brings in
 esac'
 # fake chroot: run the target command with the fake rootfs standing in for "/"
 stub chroot '
@@ -117,6 +128,9 @@ done
 (cd "$out" && sha256sum -c archm-arm64.tar.gz.sha256 >/dev/null)
 grep -qx 'packages=3' "$out/archm-arm64.info" || { echo "info: wrong package count"; cat "$out/archm-arm64.info"; exit 1; }
 grep -qx "base_md5=$BASE_MD5" "$out/archm-arm64.info" || { echo "info: wrong base md5"; exit 1; }
+grep -Eq '^files=[0-9]+$' "$out/archm-arm64.info" || { echo "info: files= missing"; cat "$out/archm-arm64.info"; exit 1; }
+grep -Eq '^uncompressed_bytes=[0-9]+$' "$out/archm-arm64.info" || { echo "info: uncompressed_bytes= missing"; exit 1; }
+grep -q '^### archm arm64 build report' "$out/archm-arm64.stats.md" || { echo "no build report"; exit 1; }
 
 x=$E/x
 mkdir "$x"
@@ -133,19 +147,25 @@ chk "android groups added"      grep -qx 'aid_inet:x:3003:' "$x/etc/group"
 chk "alarm group untouched by groups loop" grep -q '^alarm:' "$x/etc/group"
 chk "hwdb hook masked"          test "$(readlink "$x/etc/pacman.d/hooks/30-systemd-hwdb.hook")" = /dev/null
 chk "sysusers hook active"      test ! -e "$x/etc/pacman.d/hooks/20-systemd-sysusers.hook"
+chk "hook added by the upgrade masked" test "$(readlink "$x/etc/pacman.d/hooks/40-udev-new.hook")" = /dev/null
 chk "overlay installed"         test -f "$x/etc/profile.d/archm.sh"
 chk "bash.bashrc hooked"        grep -q 'archm/bashrc' "$x/etc/bash.bashrc"
 chk "makepkg flags"             grep -qxF 'MAKEFLAGS="-j$(nproc)"' "$x/etc/makepkg.conf"
 chk "release file"              grep -qx 'VERSION=2099.01.01' "$x/etc/archm-release"
 chk "release file md5"          grep -qx "BASE_TARBALL_MD5=$BASE_MD5" "$x/etc/archm-release"
 for gone in boot/Image usr/lib/modules/6.1/modules.dep usr/share/doc/foo usr/share/info/dir \
-            usr/share/locale/de usr/share/locale/fr etc/pacman.d/gnupg/S.gpg-agent \
+            usr/share/locale/de usr/share/locale/fr usr/share/man/de usr/share/man/fr usr/lib/udev/hwdb.bin \
+            etc/pacman.d/gnupg/S.gpg-agent \
             etc/ssh/ssh_host_ed25519_key root/.bash_history tmp/leftover tmp/archm var/log/pacman.log \
             var/cache/pacman/pkg/big.pkg.tar.zst var/lib/pacman/sync/core.db; do
   chk "removed: $gone" test ! -e "$x/$gone"
 done
 chk "kept en_GB locale"         test -e "$x/usr/share/locale/en_GB/c.mo"
 chk "kept locale.alias"         test -e "$x/usr/share/locale/locale.alias"
+chk "kept man1 pages"           test -e "$x/usr/share/man/man1/ls.1.gz"
+chk "NoExtract: man rule"       grep -qxF 'NoExtract = usr/share/man/* !usr/share/man/man*' "$x/etc/pacman.conf"
+chk "machine-id exists"         test -e "$x/etc/machine-id"
+chk "machine-id ships empty"    test ! -s "$x/etc/machine-id"
 for d in dev proc sys; do chk "empty /$d" test -z "$(ls -A "$x/$d")"; done
 chk "/bin symlink preserved"    test "$(readlink "$x/bin")" = usr/bin
 
@@ -159,6 +179,7 @@ chk "kernel removed once"       test "$(grep -c '^pacman -Rddn --noconfirm linux
 rm_line=$(grep -n '^pacman -Rddn' "$log" | head -1 | cut -d: -f1)
 up_line=$(grep -n '^pacman -Su --noconfirm' "$log" | head -1 | cut -d: -f1)
 chk "kernel removed BEFORE upgrade" test "$rm_line" -lt "$up_line"
+chk "hooks masked BEFORE upgrade" grep -qx 'hooks masked at upgrade' "$log"
 chk "keyring refreshed first"   grep -q '^pacman -Sy --noconfirm archlinuxarm-keyring$' "$log"
 chk "extras (minus missing ones)" grep -qx 'pacman -S --needed --noconfirm nano sudo curl wget git openssh htop bash-completion' "$log"
 chk "chroot mounts set up"      grep -q '^mount -t proc' "$log"
@@ -199,5 +220,14 @@ expect_abort "valid signature from the wrong key" "$E/mirror-wrongkey"
 cp -r "$E/mirror" "$E/mirror-corrupt"
 echo 00000000000000000000000000000000 >"$E/mirror-corrupt/$tgz.md5"
 expect_abort "md5 mismatch" "$E/mirror-corrupt"
+
+# ---- the key can come from the repo: a keyserver that refuses everything must not matter
+mkdir -p "$E/repo/keys"
+cp "$E/test.pub" "$E/repo/keys/archlinuxarm.asc"
+: >"$E2E_LOG"
+(cd "$E/repo" && PATH=$E/bin:$PATH ALARM_URL=file://$E/mirror ARCHM_VERSION=2099.01.01 E2E_NO_KEYSERVER=1 \
+   bash build.sh arm64 "$E/out-vendored") >"$E/vendored.log" 2>&1 || { cat "$E/vendored.log"; echo "build with a vendored key failed"; exit 1; }
+chk "vendored key: tarball built"        test -s "$E/out-vendored/archm-arm64.tar.gz"
+if grep -qx 'keyserver lookup' "$E2E_LOG"; then echo "keyserver was used although keys/archlinuxarm.asc had the key"; exit 1; fi
 
 echo "e2e OK"

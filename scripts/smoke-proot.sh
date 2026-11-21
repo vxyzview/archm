@@ -18,8 +18,8 @@ case $probe in
 esac
 
 case $abi in
-  arm64) native="aarch64";       qemu=qemu-aarch64-static ;;
-  arm)   native="armv7l armv8l"; qemu=qemu-arm-static ;;
+  arm64) native="aarch64";       qemu="qemu-aarch64-static" ;;
+  arm)   native="armv7l armv8l"; qemu="qemu-arm-static" ;;
   *)     echo "unknown ABI: $abi" >&2; exit 2 ;;
 esac
 emu=()
@@ -48,6 +48,26 @@ check() {   # check "<what>" "<shell snippet that must exit 0>"
     failed=1
   fi
 }
+check_net() {   # like check, but up to 3 tries: a mirror hiccup must not block a release
+  local out try
+  for try in 1 2 3; do
+    if out=$(run "$2" 2>&1); then
+      report+="ok    $1"$'\n'
+      return 0
+    fi
+    if [ "$try" -lt 3 ]; then sleep 10; fi
+  done
+  report+="FAIL  $1"$'\n'"$(sed 's/^/        | /' <<<"$out")"$'\n'
+  failed=1
+}
+soft() {   # like check, but only reported ("warn"), never failing the run: for the optional trimming
+  local out
+  if out=$(run "$2" 2>&1); then
+    report+="ok    $1"$'\n'
+  else
+    report+="warn  $1"$'\n'"$(sed 's/^/        | /' <<<"$out")"$'\n'
+  fi
+}
 
 check "identifies as Arch Linux ARM"        '. /etc/os-release && [ "$NAME" = "Arch Linux ARM" ]'
 check "fake root (uid 0)"                   '[ "$(id -u)" = 0 ]'
@@ -58,8 +78,24 @@ check "pacman download sandbox is disabled" 'grep -qx DisableSandbox /etc/pacman
 check "locale was generated"                'locale -a | grep -qi "^en_US.utf-\?8$"'
 check "no default alarm user"               '! getent passwd alarm'
 check "login shell applies archm prompt"    'bash -lic "case \$PS1 in *archm*) ;; *) exit 1;; esac"'
-check "pacman can sync (network, DNS, sandbox off)" 'pacman -Sy --noconfirm'
-check "pacman can install a package"        'pacman -S --needed --noconfirm tree'
+check_net "pacman can sync (network, DNS, sandbox off)" 'pacman -Sy --noconfirm'
+check_net "pacman can install a package"        'pacman -S --needed --noconfirm tree'
+
+# Reported but not blocking: if one of these breaks, the image still works, only less slim.
+soft "first login fills /etc/machine-id"      'bash -lc true; [ -s /etc/machine-id ]'
+soft "generated hwdb.bin is gone"             '[ ! -e /usr/lib/udev/hwdb.bin ]'
+soft "translated man pages are gone"          '! ls /usr/share/man 2>/dev/null | grep -qv "^man"'
+
+# Informational, not a check: login-shell cost under proot (qemu runs are inflated, and say so).
+ms() {   # ms "<command>": mean wall time in milliseconds over 5 runs
+  local t0 t1
+  t0=$(date +%s%N)
+  for _ in 1 2 3 4 5; do run "$1" >/dev/null 2>&1 || true; done
+  t1=$(date +%s%N)
+  echo $(( (t1 - t0) / 5000000 ))
+}
+timing="startup, mean of 5: login shell $(ms 'bash -lic exit') ms, bare proot + true $(ms true) ms${emu[*]:+ (under qemu: inflated)}"
+report+=$'\n'"$timing"$'\n'
 
 printf '\n%s' "$report"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then

@@ -28,9 +28,12 @@ patch_pacman_conf() {
     echo '# proot cannot provide the Landlock/seccomp sandbox pacman uses for downloads.'
     echo 'DisableSandbox'
     if [ "${SLIM:-1}" = 1 ]; then
-      echo '# slim image: no docs, no non-English translations. Delete these two lines to get them.'
+      # In each line the "!" exceptions must come after the glob they carve out of: pacman lets
+      # the last matching pattern win (tests/run.sh checks this against a real pacman).
+      echo '# slim image: no docs, no non-English translations. Delete these three lines to get them.'
       echo 'NoExtract = usr/share/doc/* usr/share/gtk-doc/* usr/share/help/* usr/share/info/*'
       echo 'NoExtract = usr/share/locale/* !usr/share/locale/en* !usr/share/locale/locale.alias'
+      echo 'NoExtract = usr/share/man/* !usr/share/man/man*'
     fi
     echo '# <<< archm'
   } >"$blk"
@@ -127,6 +130,12 @@ slim_down() {
   rm -rf "$ROOT"/usr/share/doc/* "$ROOT"/usr/share/gtk-doc/* "$ROOT"/usr/share/help/* "$ROOT"/usr/share/info/*
   find "$ROOT/usr/share/locale" -mindepth 1 -maxdepth 1 ! -name 'en*' ! -name locale.alias \
     -exec rm -rf {} + 2>/dev/null || true
+  # Translated man pages live in usr/share/man/<lang>/; man1, man5, ... stay.
+  find "$ROOT/usr/share/man" -mindepth 1 -maxdepth 1 ! -name 'man*' \
+    -exec rm -rf {} + 2>/dev/null || true
+  # The systemd hook generated hwdb.bin (a sizeable file) before mask_hooks disabled that hook;
+  # nothing under proot reads it, and with the hook masked it would only go stale.
+  rm -f "$ROOT/usr/lib/udev/hwdb.bin" "$ROOT/etc/udev/hwdb.bin"
 }
 
 write_release() {
@@ -160,10 +169,11 @@ main() {
   patch_pacman_conf
   init_keyring
   strip_kernel      # before the upgrade: no kernel download, no initramfs hooks under qemu
+  mask_hooks        # same reason: no hwdb rebuild during the upgrade (slow under qemu, useless here)
   upgrade_system
   strip_kernel      # safety net in case the upgrade pulled any of it back in
   install_overlay
-  mask_hooks
+  mask_hooks        # again: the upgrade may have installed hook files that did not exist before
   configure_system
   slim_down
   write_release

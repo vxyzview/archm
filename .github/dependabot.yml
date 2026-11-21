@@ -1,0 +1,13 @@
+# Keeps the SHA-pinned actions in .github/workflows/release.yml current: Dependabot opens a pull
+# request per update, rewriting the SHA and the version in the trailing comment together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7          # let a new release prove itself before it is proposed
+    groups:
+      actions:
+        patterns: ["*"]        # one pull request for all of them

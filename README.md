@@ -8,8 +8,11 @@ Rebuilt every week from the official Arch Linux ARM tarball (full `pacman -Syu` 
 | `arm64` | aarch64 | `https://github.com/vxyzview/archm/releases/latest/download/archm-arm64.tar.gz` |
 | `arm` | armv7 | `https://github.com/vxyzview/archm/releases/latest/download/archm-arm.tar.gz` |
 
-Every release also carries `*.tar.gz.sha256`, `SHA256SUMS`, `manifest.json` (tag, URL, SHA-256, size per ABI) and `*.packages.txt`.
-Tags are dates: `2026.11.20`, and `2026.11.20.1` for a second build the same day.
+Every release also carries `*.tar.gz.sha256`, `SHA256SUMS`, `manifest.json` (tag, URL, SHA-256, size, `files` and
+`uncompressed_bytes` per ABI) and `*.packages.txt`. The release notes list the package changes since the previous release.
+Tags are dates: `2026.11.20`, and `2026.11.20.1` for a second build the same day. The tag is also the `VERSION` inside
+the image (`/etc/archm-release`), so a launcher can compare what is installed with the `tag` in `manifest.json`.
+Each tarball has a signed build-provenance attestation: `gh attestation verify archm-arm64.tar.gz --repo vxyzview/archm`.
 
 ## Use it in xyzterm
 
@@ -18,6 +21,8 @@ Tags are dates: `2026.11.20`, and `2026.11.20.1` for a second build the same day
    (`archm-arm64.tar.gz.sha256`, or `manifest.json` if you want the app to look it up).
 3. What the extractor can rely on: plain `.tar.gz`; entries start at `./` (`./bin`, `./etc`, ...); no hardlinks,
    no device nodes, no xattrs; `dev`, `proc`, `sys` are empty. Shell: `/bin/bash`. First command: `pacman -Syu`.
+   `manifest.json` gives `uncompressed_bytes` (the file data once unpacked: check free space before extracting; directories
+   and metadata come on top) and `files` (entries in the tarball: show progress by count).
 4. Anything in the app that assumes Ubuntu (apt commands, `/etc/lsb-release`, `pfetch` tweaks) needs a pacman equivalent.
 
 Shell setup lives in `/etc` (`/etc/profile.d/archm.sh`, `/etc/archm/bashrc`) on purpose: xyzterm binds `/root` and
@@ -29,17 +34,18 @@ Shell setup lives in `/etc` (`/etc/profile.d/archm.sh`, `/etc/archm/bashrc`) on 
 |---|---|
 | `DisableSandbox` in `pacman.conf`; no `DownloadUser`, no `CheckSpace` | pacman 7's download sandbox needs Landlock/seccomp, which proot/Android generally can't give. Without this, `pacman -Syu` fails. |
 | Kernel, headers, firmware, U-Boot, initramfs tools removed | The Android kernel is what runs. Far fewer files and bytes to extract and back up. |
-| Docs and non-English translations not installed (`NoExtract`, `SLIM=1`) | Fewer files means faster installs and upgrades (every file costs ptrace round-trips). Man pages stay; install `man-db` to read them. |
-| Hardware-database pacman hooks masked (`*hwdb*`, `*udev*`) | They rebuild databases that are useless here and are slow under proot. |
+| Docs and non-English translations, translated man pages not installed (`NoExtract`, `SLIM=1`) | Fewer files means faster installs and upgrades (every file costs ptrace round-trips). English man pages stay; install `man-db` to read them. |
+| Hardware-database pacman hooks masked (`*hwdb*`, `*udev*`), the generated `hwdb.bin` dropped (`SLIM=1`) | They rebuild databases that are useless here and are slow under proot. The hooks are masked before the build's own upgrade too, so the build skips that work as well. |
 | `makepkg` uses `-j$(nproc)` | Builds use all cores. |
 | Keyring initialised and populated | No slow `pacman-key --init` on first use. |
+| `/etc/machine-id` ships empty and is filled on the first login | It has to differ per install, and D-Bus or GUI programs complain without one. The login script does it with shell builtins only, no fork. |
 | No default credentials: `alarm` user removed, root locked, no SSH host keys | Stock Arch Linux ARM ships `alarm/alarm` and `root/root`. |
 | Static DNS (1.1.1.1, 8.8.8.8), Android group names (`aid_inet`, ...) | Android has no `/etc/resolv.conf`; `id` stops complaining about unknown groups. |
 | Fork-free login scripts; prompt says `archm` | Every fork+exec is slow under proot, and Android reports the hostname as `localhost`. |
 | Hardlink-free, xattr-free `.tar.gz` | Unpacks on Android without special handling. |
 
 The rootfs is `en_US.UTF-8`, `UTC`. Change `LOCALE`/`TIMEZONE`/`EXTRA_PKGS`/`SLIM` in `config.env`.
-Get docs and translations back: delete the two `NoExtract` lines in `/etc/pacman.conf`, then reinstall the packages you want them for.
+Get docs and translations back: delete the three `NoExtract` lines in `/etc/pacman.conf`, then reinstall the packages you want them for.
 
 ## Make proot faster (launcher and Android side)
 
@@ -62,10 +68,18 @@ Get docs and translations back: delete the two `NoExtract` lines in `/etc/pacman
 ## Releases and updates
 
 - **Weekly**: Mondays 03:17 UTC the workflow downloads the newest official tarball, verifies it, upgrades everything, and publishes.
-- **Manual**: Actions → release → *Run workflow*.
+- **Manual**: Actions → release → *Run workflow*. Publishing only ever happens from `main`.
 - **On push**: only builds and tests (artifacts kept 7 days); it does not publish.
 - **Pull requests**: offline tests only.
+- **Gate**: the proot smoke test has to pass before anything is published. If it fails, nothing is released and `latest`
+  stays on the previous build; the image that failed is kept as a build artifact for 7 days so you can inspect it.
+- **Build report**: every build prints package sizes, file count and what hardlinks cost in the job summary: the numbers
+  for deciding what to trim next. The smoke test adds login-shell startup time under proot.
 - The signature of the base tarball is checked against key `68B3537F39A313B3E574D06777193F152BDBE6A6` (published by Arch Linux ARM).
+  A copy of that key is kept in `keys/archlinuxarm.asc` so a keyserver outage cannot fail the build; only the fingerprint is
+  trusted, the file is a convenience (a wrong one just falls back to the keyservers). To refresh it:
+  `gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys <fingerprint> && gpg --armor --export <fingerprint> > keys/archlinuxarm.asc`.
+- All GitHub Actions are pinned to commit SHAs; Dependabot proposes the updates weekly (`.github/dependabot.yml`).
 - Optional repo variable `KEEP_RELEASES` (for example `12`) deletes older releases and tags.
   Remember xyzterm pins a specific release: do not prune the one it points to.
 - GitHub pauses schedules after 60 days without repository activity; *Enable workflow* on the Actions tab fixes it if it ever stops.
@@ -77,10 +91,14 @@ Needs a real Linux machine with root (not proot/Termux).
 ```sh
 sudo apt install qemu-user-static binfmt-support libarchive-tools pigz curl gnupg
 sudo ./build.sh arm64 dist        # or: arm
-bash tests/run.sh                 # offline tests, no root needed (python3-yaml validates the workflow; skipped if absent)
+bash tests/run.sh                 # offline tests, no root needed
 ```
 
-Output: `dist/archm-<abi>.tar.gz` (+ `.sha256`, `.packages.txt`, `.info`). `KEEP_WORK=1` keeps the temp rootfs for inspection.
+Output: `dist/archm-<abi>.tar.gz` (+ `.sha256`, `.packages.txt`, `.info`, `.stats.md`). `KEEP_WORK=1` keeps the temp rootfs for inspection.
+
+`tests/run.sh` uses a few optional tools and skips the test that needs one if it is missing: `python3-yaml` (workflow
+syntax), `shellcheck`, and `pacman` plus `fakeroot` (checks what the `NoExtract` lines really do; on Debian/Ubuntu:
+`sudo apt install python3-yaml shellcheck pacman-package-manager fakeroot`).
 
 ## Troubleshooting
 
@@ -88,7 +106,8 @@ Output: `dist/archm-<abi>.tar.gz` (+ `.sha256`, `.packages.txt`, `.info`). `KEEP
 - `signature ... is unknown trust`: `pacman -Sy archlinuxarm-keyring && pacman-key --populate archlinuxarm`.
 - `failed retrieving file ... 404`: a mirror is mid-sync. Retry, or pick another in `/etc/pacman.d/mirrorlist`.
 - Database not found / `target not found`: run `pacman -Syu` first; archm ships without sync databases.
-- D-Bus or GUI programs complain about the machine ID: `dbus-uuidgen --ensure=/etc/machine-id`.
+- D-Bus or GUI programs complain about the machine ID: archm fills `/etc/machine-id` on the first login. If it is still empty
+  (the launcher hides `/proc/sys/kernel/random/uuid`, or never starts a login shell): `dbus-uuidgen --ensure=/etc/machine-id`.
 - `sshd` has no host keys: `ssh-keygen -A`, and set a root or user password first.
 
 ## License
