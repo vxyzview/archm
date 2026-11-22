@@ -63,6 +63,82 @@ test_shellcheck() {
   shellcheck -x -S warning -s sh rootfs-overlay/etc/profile.d/archm.sh
 }
 
+# The README is the front door: a broken image, a dead anchor or a ragged table would only show
+# up on GitHub, after the push. Anchors follow GitHub's heading rule: lower-case, drop everything
+# but letters, digits, "_", "-" and spaces (emoji go too), spaces become "-".
+test_readme() {
+  python3 - <<'PY'
+import pathlib, re, sys
+import xml.etree.ElementTree as ET
+
+text = pathlib.Path("README.md").read_text()
+errors = []
+
+if len(re.findall(r"^```", text, flags=re.M)) % 2:
+    errors.append("unbalanced ``` fences")
+prose = re.sub(r"^```.*?^```", "", text, flags=re.M | re.S)       # code blocks are not markup
+
+if len(re.findall(r"<details>", prose)) != len(re.findall(r"</details>", prose)):
+    errors.append("<details> and </details> do not match")
+
+def slug(heading):
+    heading = re.sub(r"<[^>]+>|`", "", heading).lower()
+    return re.sub(r"[^\w\- ]", "", heading).replace(" ", "-")
+
+slugs, seen = set(), {}
+for m in re.finditer(r"^#{1,6}\s+(.+?)\s*$", prose, flags=re.M):
+    s = slug(m.group(1))
+    n = seen.get(s, 0)
+    seen[s] = n + 1
+    slugs.add(s if n == 0 else f"{s}-{n}")
+
+targets = re.findall(r"\]\(([^)\s]+)", prose) + re.findall(r'(?:href|src)="([^"]+)"', prose)
+for t in targets:
+    if re.match(r"(https?:|mailto:)", t):
+        continue
+    if t.startswith("#"):
+        if t[1:] not in slugs:
+            errors.append(f"anchor {t} matches no heading (headings give: {sorted(slugs)})")
+    elif not pathlib.Path(t.split("#")[0]).exists():
+        errors.append(f"linked file does not exist: {t}")
+
+for tag in re.findall(r"<img\b[^>]*>", prose):
+    if 'alt="' not in tag:
+        errors.append(f"image without alt text: {tag[:70]}")
+
+lines = prose.splitlines()
+i = 0
+while i < len(lines):
+    if not lines[i].lstrip().startswith("|"):
+        i += 1
+        continue
+    j = i
+    while j < len(lines) and lines[j].lstrip().startswith("|"):
+        j += 1
+    block = lines[i:j]
+    widths = {len(re.split(r"(?<!\\)\|", row.strip().strip("|"))) for row in block}
+    if len(block) < 2 or len(widths) != 1 or not re.match(r"^\s*\|?\s*:?-{3,}", block[1]):
+        errors.append(f"table at line {i + 1} is malformed or ragged: {block[0][:60]}")
+    i = j
+
+for m in re.finditer(r"^```mermaid\n(.*?)^```", text, flags=re.M | re.S):
+    first = m.group(1).split("\n", 1)[0].strip()
+    if not re.match(r"(flowchart|graph|sequenceDiagram|gantt|classDiagram|stateDiagram|pie|journey|erDiagram)\b", first):
+        errors.append(f"mermaid block starts with {first!r}")
+
+try:                                                              # the banner must at least be well-formed SVG
+    svg = ET.parse("assets/banner.svg").getroot()
+    if not svg.tag.endswith("svg") or "viewBox" not in svg.attrib:
+        errors.append("assets/banner.svg is not an SVG with a viewBox")
+except (ET.ParseError, OSError) as e:
+    errors.append(f"assets/banner.svg: {e}")
+
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
+PY
+}
+
 # The release pipeline's safety rules, so an edit cannot quietly undo them.
 test_workflow_policy() {
   local wf=.github/workflows/release.yml bad
@@ -618,6 +694,7 @@ echo "archm tests"
 t "scripts parse, workflow is valid YAML"   test_syntax
 t "shellcheck: no warnings or errors"        test_shellcheck
 t "workflow: pinned actions, gated release"  test_workflow_policy
+t "README: links, anchors, tables, banner"    test_readme
 t "ABI mapping arm64/arm"                    test_target
 t "kernel/firmware regex"                    test_remove_regex
 t "md5 verification"                         test_md5

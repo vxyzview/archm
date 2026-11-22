@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-labelledby="t d">
+  <title id="t">archm: Arch Linux ARM for proot on Android</title>
+  <desc id="d">A terminal-style banner: the name archm with a block cursor, the line "a slim, signed, weekly-fresh rootfs for proot", and a small terminal window running pacman -Syu.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A0F1E"/>
+      <stop offset="0.6" stop-color="#0D1B34"/>
+      <stop offset="1" stop-color="#0F2A4D"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="1010" cy="40" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1793D1" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#1793D1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" gradientUnits="userSpaceOnUse" x1="60" y1="0" x2="451" y2="0">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#6CC4F0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1793D1"/>
+      <stop offset="1" stop-color="#1793D1" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.1" fill="#FFFFFF" fill-opacity="0.07"/>
+    </pattern>
+    <clipPath id="card"><rect width="1280" height="340" rx="26"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="1280" height="340" fill="url(#bg)"/>
+    <rect width="1280" height="340" fill="url(#dots)"/>
+    <rect width="1280" height="340" fill="url(#glow)"/>
+    <rect x="64" y="42" width="150" height="4" rx="2" fill="url(#bar)"/>
+  </g>
+  <rect x="1" y="1" width="1278" height="338" rx="25" fill="none" stroke="#1793D1" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- left: name, tagline, pills -->
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',monospace">
+    <text x="64" y="82" font-size="16" letter-spacing="3" fill="#6CC4F0">ARCH LINUX ARM  ·  PROOT  ·  ANDROID</text>
+    <path d="M104.4 166.6Q94 166.6 89.9 169.3Q85.8 171.9 85.8 178.4Q85.8 183.2 88.6 186.1Q91.5 189 96.4 189Q103.7 189 107.8 183.4Q111.9 177.8 111.9 167.9V166.6ZM130.3 159.4V200H111.9V192.1Q108.5 196.8 103.2 199.3Q98 201.8 91.6 201.8Q79.5 201.8 72.7 195.4Q66 189 66 177.5Q66 165.1 74 159.2Q82.1 153.2 99 153.2H111.9V150.1Q111.9 145.6 108.6 143.3Q105.3 141 99 141Q92.3 141 86.1 142.6Q79.8 144.3 73 148V132.1Q79.2 129.6 85.5 128.4Q91.9 127.2 99 127.2Q116.3 127.2 123.3 134.2Q130.3 141.3 130.3 159.4Z M211.3 148.5Q208.3 145.7 204.2 144.3Q200.1 142.9 195.2 142.9Q189.3 142.9 184.9 145Q180.5 147.1 178.1 151Q176.5 153.4 175.9 156.8Q175.3 160.3 175.3 167.2V200H156.7V128.9H175.3V140Q178.1 133.9 183.7 130.5Q189.4 127.2 196.9 127.2Q200.7 127.2 204.4 128.1Q208 129 211.3 130.8Z M283.9 196.4Q279.2 199.1 273.8 200.5Q268.4 201.8 262.2 201.8Q245.7 201.8 236.5 191.9Q227.2 182 227.2 164.5Q227.2 146.9 236.5 137Q245.9 127.1 262.3 127.1Q268 127.1 273.3 128.4Q278.6 129.7 283.9 132.5V149.5Q279.8 146 275 144.2Q270.1 142.3 264.9 142.3Q255.8 142.3 250.9 148.1Q246 153.9 246 164.5Q246 175.2 250.9 180.9Q255.8 186.6 264.9 186.6Q270.3 186.6 275 184.8Q279.7 183 283.9 179.3Z M362.8 153.9V200H344.3V156.7Q344.3 149 342.1 145.7Q339.9 142.4 335 142.4Q329.9 142.4 327 146.9Q324.2 151.4 324.2 159.3V200H305.7V101.2H324.2V139.6Q326.2 133.7 330.9 130.4Q335.7 127.2 342.4 127.2Q352.5 127.2 357.6 133.9Q362.8 140.6 362.8 153.9Z M416.9 136Q419 131.5 422.2 129.4Q425.4 127.2 430.1 127.2Q439.3 127.2 442.9 133.5Q446.4 139.9 446.4 159.9V200H431.1V154.4Q431.1 146.4 429.9 143.8Q428.7 141.1 425.6 141.1Q422.4 141.1 421.1 143.8Q419.8 146.6 419.8 154.4V200H404.8V154.4Q404.8 146.6 403.5 143.8Q402.3 141.1 399.1 141.1Q395.9 141.1 394.7 143.8Q393.5 146.4 393.5 154.4V200H378.3V128.9H391.8V136.3Q393.4 132.1 396.9 129.6Q400.4 127.2 404.7 127.2Q409 127.2 412.5 129.8Q416.1 132.3 416.9 136Z" fill="url(#title)"/>
+    <rect x="463" y="108" width="46" height="94" rx="4" fill="#1793D1"/>
+
+    <g font-size="17" fill="#CFEBFA" text-anchor="middle">
+      <rect x="64"  y="270" width="92"  height="36" rx="18" fill="#1793D1" fill-opacity="0.18" stroke="#1793D1" stroke-opacity="0.6"/>
+      <text x="110" y="293">arm64</text>
+      <rect x="170" y="270" width="92"  height="36" rx="18" fill="#1793D1" fill-opacity="0.18" stroke="#1793D1" stroke-opacity="0.6"/>
+      <text x="216" y="293">armv7</text>
+      <rect x="276" y="270" width="104" height="36" rx="18" fill="#1793D1" fill-opacity="0.18" stroke="#1793D1" stroke-opacity="0.6"/>
+      <text x="328" y="293">signed</text>
+      <rect x="394" y="270" width="104" height="36" rx="18" fill="#1793D1" fill-opacity="0.18" stroke="#1793D1" stroke-opacity="0.6"/>
+      <text x="446" y="293">weekly</text>
+    </g>
+  </g>
+  <text x="64" y="242" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="25" fill="#C9D6E8">A slim, signed, weekly-fresh rootfs for proot.</text>
+
+  <!-- right: a terminal window -->
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',monospace" font-size="16">
+    <rect x="740" y="58" width="476" height="224" rx="14" fill="#070B16" fill-opacity="0.9" stroke="#1793D1" stroke-opacity="0.4"/>
+    <path d="M740 72a14 14 0 0 1 14-14h448a14 14 0 0 1 14 14v26H740z" fill="#FFFFFF" fill-opacity="0.06"/>
+    <circle cx="766" cy="78" r="6" fill="#FF5F57"/>
+    <circle cx="788" cy="78" r="6" fill="#FEBC2E"/>
+    <circle cx="810" cy="78" r="6" fill="#28C840"/>
+    <text x="1202" y="83" text-anchor="end" font-size="13" fill="#7F8EA6">root@archm</text>
+
+    <text x="762" y="132" fill="#E6EDF7"><tspan fill="#4ADE80" font-weight="700">root</tspan>@<tspan fill="#22D3EE" font-weight="700">archm</tspan>:<tspan fill="#60A5FA" font-weight="700">~</tspan># pacman -Syu</text>
+    <text x="762" y="164" fill="#7F8EA6">:: Synchronizing package databases...</text>
+    <text x="762" y="190" fill="#7F8EA6">:: Starting full system upgrade...</text>
+    <text x="762" y="216" fill="#7F8EA6">there is nothing to do</text>
+    <text x="762" y="252" fill="#E6EDF7"><tspan fill="#4ADE80" font-weight="700">root</tspan>@<tspan fill="#22D3EE" font-weight="700">archm</tspan>:<tspan fill="#60A5FA" font-weight="700">~</tspan># <tspan fill="#1793D1">█</tspan></text>
+  </g>
+</svg>
